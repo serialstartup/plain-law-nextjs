@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { AlertTriangle, FileText, Gauge, Flag, Clock, AlertCircle } from 'lucide-react'
 import { ReportActions } from '@/components/contracts/report-actions'
 import { StructuralWarningAlert } from '@/components/contracts/structural-warning-alert'
+import { StartAnalysisForm } from '@/components/contracts/start-analysis-form'
 import {
   riskBadge,
   shouldShowStructuralWarning,
@@ -15,6 +16,7 @@ import {
   primaryDriverLabel
 } from '@/lib/utils/risk'
 import type { ContractAnalysis } from '@/lib/ai/types'
+//import { riskLabel } from '@/lib/utils/risk'
 
 // Extended analysis type that includes mock/UI-specific fields
 interface ExtendedAnalysis extends ContractAnalysis {
@@ -35,7 +37,7 @@ export default async function ContractDetailPage({ params }: PageProps) {
   const { id } = await params;
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-
+  // const risk = riskLabel(c.risk_score as number | null)
   const { data: contract } = await supabase
     .from('contracts')
     .select('*')
@@ -49,11 +51,13 @@ export default async function ContractDetailPage({ params }: PageProps) {
   if (contract.status === 'uploaded') {
     return (
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold mb-4">{contract.file_name}</h1>
-        <p className="text-gray-600 mb-6">This contract has not been analyzed yet.</p>
-        <form action={analyzeContract.bind(null, id)}>
-          <Button type="submit" size="lg">Start Analysis</Button>
-        </form>
+        <h1 className="text-3xl font-bold mb-2">{contract.file_name}</h1>
+        <p className="text-muted-foreground mb-6">This contract has not been analyzed yet.</p>
+        <div className="rounded-xl border bg-card p-6">
+          <p className="text-sm text-muted-foreground mb-4">Start analysis to generate a plain-language summary, highlight risks, and get recommendations.</p>
+          <StartAnalysisForm action={analyzeContract.bind(null, id)} />
+          <p className="mt-3 text-xs text-muted-foreground">Estimated time: 15–60 seconds depending on file size.</p>
+        </div>
       </div>
     )
   }
@@ -62,8 +66,19 @@ export default async function ContractDetailPage({ params }: PageProps) {
   if (contract.status === 'analyzing') {
     return (
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold mb-4">{contract.file_name}</h1>
-        <p className="text-gray-600">Analyzing contract... This may take 30-60 seconds.</p>
+        <h1 className="text-3xl font-bold mb-2">{contract.file_name}</h1>
+        <div className="rounded-xl border bg-card p-6">
+          <div className="flex items-center gap-4">
+            <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+            <div>
+              <p className="font-medium">Analyzing your document…</p>
+              <p className="text-sm text-muted-foreground">Extracting text, identifying clauses, and assessing risk. Estimated 15–60s.</p>
+            </div>
+          </div>
+          <div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-muted">
+            <div className="h-full w-1/2 animate-pulse rounded-full bg-primary" />
+          </div>
+        </div>
       </div>
     )
   }
@@ -81,8 +96,21 @@ export default async function ContractDetailPage({ params }: PageProps) {
     )
   }
 
-  // Prefer real analysis if present; otherwise show a polished mock
-  const analysis = (contract.analysis ?? mockAnalysis()) as ExtendedAnalysis
+  // Use only real analysis; avoid mock data
+  const analysis = contract.analysis as ExtendedAnalysis | null
+
+  // If analysis is missing despite not being in an upload/analyzing/failed state
+  if (!analysis) {
+    return (
+      <div className="max-w-4xl mx-auto">
+        <h1 className="text-3xl font-bold mb-4">{contract.file_name}</h1>
+        <p className="text-gray-600 mb-6">No analysis found for this contract.</p>
+        <form action={analyzeContract.bind(null, id)}>
+          <Button type="submit" size="lg">Run Analysis</Button>
+        </form>
+      </div>
+    )
+  }
   const structuralOnly = isStructuralOnlyMode(analysis)
   const riskInfo = riskBadge(contract.risk_score ?? analysis.risk?.overallScore ?? analysis.riskScore)
   const showStructuralWarning = shouldShowStructuralWarning(analysis)
@@ -147,6 +175,7 @@ export default async function ContractDetailPage({ params }: PageProps) {
               <div className="space-y-3 text-sm">
                 <div className="flex items-center justify-between">
                   <span className="text-muted-foreground">Document Quality</span>
+                  
                   <Badge variant="destructive">
                     {analysis.analysisMeta?.structureQuality === 'poor' ? 'Poor' : 'Unknown'}
                   </Badge>
@@ -270,6 +299,7 @@ export default async function ContractDetailPage({ params }: PageProps) {
               <div className="flex flex-col items-end gap-1">
                 <Badge variant={riskInfo.variant}>{riskInfo.label}</Badge>
                 {analysis.risk?.confidence && (
+                  
                   <Badge
                     variant={analysis.risk.confidence === 'low' ? 'outline' : 'secondary'}
                     className={`text-xs ${analysis.risk.confidence === 'low' ? 'border-amber-500 text-amber-600' : ''}`}
@@ -418,18 +448,52 @@ export default async function ContractDetailPage({ params }: PageProps) {
                     <div className="text-xs text-muted-foreground mb-2">Section {cl.number} — {cl.title}</div>
                     <div className="rounded-md bg-muted/40 p-4 text-sm text-foreground/80 whitespace-pre-wrap">{cl.text}</div>
                   </div>
-                  <div className="p-6 space-y-2">
-                    <div className="inline-flex items-center gap-2 rounded-full border bg-accent px-3 py-1 text-xs font-medium">
-                      <FileText className="size-3" /> Plain English Translation
+                  <div className="p-6 space-y-3">
+                    <div className="space-y-2">
+                      <div className="inline-flex items-center gap-2 rounded-full border bg-accent px-3 py-1 text-xs font-medium">
+                        <FileText className="size-3" /> Plain Language
+                      </div>
                     </div>
-                    <div className="text-sm leading-relaxed">{cl.plain}</div>
-                    {cl.riskLevel && (
-                      <div className="pt-2">
-                        <Badge variant={cl.riskLevel === 'High' ? 'destructive' : cl.riskLevel === 'Medium' ? 'default' : 'secondary'}>
-                          {cl.riskLevel} Risk
-                        </Badge>
+
+                    <div className="space-y-1">
+                      <div className="text-xs font-medium text-foreground/80">Why it matters</div>
+                      <div className="text-sm leading-relaxed text-foreground/90">
+                        {cl.riskDescription ?? cl.description ?? 'No risk description provided.'}
+                      </div>
+                    </div>
+
+                    {cl.recommendations && (
+                      <div className="space-y-1">
+                        <div className="text-xs font-medium text-foreground/80">What to do</div>
+                        {Array.isArray(cl.recommendations) ? (
+                          <ul className="list-disc pl-5 text-sm space-y-1">
+                            {cl.recommendations.map((rec: string, idx: number) => (
+                              <li key={idx}>{rec}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <div className="text-sm leading-relaxed">{cl.recommendations}</div>
+                        )}
                       </div>
                     )}
+
+                    {(() => {
+                      // Robust, case-insensitive mapping + numeric fallback
+                      let score: number | null = null
+                      const level = typeof cl.riskLevel === 'string' ? cl.riskLevel.toLowerCase() : ''
+                      if (level === 'critical') score = 95
+                      else if (level === 'high') score = 85
+                      else if (level === 'medium') score = 55
+                      else if (level === 'low') score = 20
+                      else if (typeof (cl as any).riskScore === 'number') score = (cl as any).riskScore as number
+
+                      const badge = riskBadge(score)
+                      return (
+                        <div className="pt-2">
+                          <Badge variant={badge.variant}>{badge.label}</Badge>
+                        </div>
+                      )
+                    })()}
                   </div>
                 </div>
               </CardContent>
@@ -439,54 +503,4 @@ export default async function ContractDetailPage({ params }: PageProps) {
       </div>
     </div>
   )
-}
-
-function mockAnalysis() {
-  return {
-    riskScore: 78,
-    processingTime: '12s',
-    criticalFlags: [
-      'Uncapped liability; no monetary cap for damages',
-      'Missing termination for convenience',
-      'Broad indemnity obligations',
-    ],
-    critical: [
-      {
-        title: 'Uncapped Liability',
-        description:
-          'The liability clause does not specify a monetary cap for damages, exposing the company to unlimited financial risk in case of breach.',
-        severity: 'High',
-        section: '12.4',
-      },
-      {
-        title: 'Automatic Renewal',
-        description:
-          'Contract automatically renews for 12-month terms unless a 90-day notice is given prior to expiration, which is unusually long.',
-        severity: 'Medium',
-        section: '4.1',
-      },
-    ],
-    executiveSummary:
-      'This Service Agreement outlines the terms under which Vendor X will provide services. While payment terms are standard (Net 30), the indemnity clauses are notably broad, favoring the vendor. The absence of a clear termination for convenience clause locks the company into the full term unless a material breach occurs.',
-    clauses: [
-      {
-        number: '8.2',
-        title: 'Indemnification',
-        text:
-          'Customer agrees to indemnify, defend, and hold harmless Vendor from any and all claims, damages, losses, and expenses arising out of or resulting from Customer\'s use of the Service, regardless of negligence.',
-        plain:
-          'If anyone sues the Vendor because of how you used their service, you may have to pay for everything—even if the Vendor was negligent in some cases.',
-        riskLevel: 'High',
-      },
-      {
-        number: '12.1',
-        title: 'Termination',
-        text:
-          'Either party may terminate this Agreement only upon a material breach by the other party that remains uncured for thirty (30) days following written notice.',
-        plain:
-          'You cannot cancel this contract just because you want to. You can only cancel it if the other party breaks a major rule and fails to fix it within 30 days.',
-        riskLevel: 'Medium',
-      },
-    ],
-  }
 }
